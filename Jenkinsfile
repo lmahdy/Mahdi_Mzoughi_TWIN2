@@ -14,8 +14,8 @@ pipeline {
                 // 1. Récupérer le code depuis GitHub
                 git branch: 'main', credentialsId: 'github-credentials', url: 'https://github.com/lmahdy/Mahdi_Mzoughi_TWIN2.git'
                 
-                // 2. Construction + Tests + JaCoCo avec Maven géré par Jenkins
-                withMaven(maven: 'M3') {      // ⬅️ Nouvelle configuration
+                // 2. Build + Tests + JaCoCo avec Maven géré par Jenkins
+                withMaven(maven: 'M3') {
                     sh 'mvn clean verify'
                 }
             }
@@ -24,7 +24,9 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv(installationName: "${SONAR_SERVER}") {
-                    sh 'mvn sonar:sonar -Dsonar.projectKey=student-management -Dsonar.projectName=student-management'
+                    withCredentials([string(credentialsId: 'SONAR_TOKEN_CREDENTIALS', variable: 'SONAR_TOKEN')]) {
+                        sh 'mvn sonar:sonar -Dsonar.projectKey=student-management -Dsonar.projectName=student-management -Dsonar.login=$SONAR_TOKEN'
+                    }
                 }
             }
         }
@@ -37,7 +39,13 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${DOCKER_HUB_CREDENTIALS}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: "${DOCKER_HUB_CREDENTIALS}",
+                        passwordVariable: 'DOCKER_PASSWORD',
+                        usernameVariable: 'DOCKER_USERNAME'
+                    )
+                ]) {
                     sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
                     sh "docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}"
                     sh "docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest"
