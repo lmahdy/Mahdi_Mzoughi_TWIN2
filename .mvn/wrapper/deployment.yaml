@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: student-management-deployment
+  labels:
+    app: student-management
+spec:
+  replicas: 2 # Nous demandons 2 copies (Pods) de l'application
+  selector:
+    matchLabels:
+      app: student-management
+  template:
+    metadata:
+      labels:
+        app: student-management
+    spec:
+      containers:
+        - name: student-management-app
+          # L'image que nous avons poussée sur Docker Hub
+          image: lmahdyyyy/student-management:latest
+          ports:
+            - containerPort: 8080 # Le port sur lequel l'application Spring Boot écoute

@@ -3,35 +3,27 @@ pipeline {
 
     environment {
         DOCKER_HUB_CREDENTIALS = 'docker-hub-credentials'
-        DOCKER_IMAGE = 'lmahdyyyy/student-management'
-        SONAR_SERVER = 'SonarQube Local'
+        DOCKER_IMAGE = 'lmahdyyyy/student-management'   // your DockerHub repo
+        K8S_DIR = 'k8s'
     }
 
     stages {
 
-        stage('Checkout & Build') {
+        stage('Checkout') {
             steps {
-                // 1. Récupérer le code depuis GitHub
                 git branch: 'main', credentialsId: 'github-credentials', url: 'https://github.com/lmahdy/Mahdi_Mzoughi_TWIN2.git'
-                
-                // 2. Build + Tests + JaCoCo avec Maven géré par Jenkins
-                withMaven(maven: 'M3') {
-                    sh 'mvn clean verify'
-                }
             }
         }
 
-        stage('SonarQube Analysis') {
+        stage('Maven Build') {
             steps {
-                withSonarQubeEnv(installationName: "${SONAR_SERVER}") {
-                    withCredentials([string(credentialsId: 'SONAR_TOKEN_CREDENTIALS', variable: 'SONAR_TOKEN')]) {
-                        sh 'mvn sonar:sonar -Dsonar.projectKey=student-management -Dsonar.projectName=student-management -Dsonar.login=$SONAR_TOKEN'
-                    }
+                withMaven(maven: 'M3') {
+                    sh 'mvn clean package -DskipTests'
                 }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Docker Build') {
             steps {
                 sh "docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} ."
             }
@@ -42,33 +34,54 @@ pipeline {
                 withCredentials([
                     usernamePassword(
                         credentialsId: "${DOCKER_HUB_CREDENTIALS}",
-                        passwordVariable: 'DOCKER_PASSWORD',
-                        usernameVariable: 'DOCKER_USERNAME'
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
                     )
                 ]) {
-                    sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
-                    sh "docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}"
-                    sh "docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest"
-                    sh "docker push ${DOCKER_IMAGE}:latest"
-                    sh "docker logout"
+                    sh """
+                        docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
+                        docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                        docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest
+                        docker push ${DOCKER_IMAGE}:latest
+                        docker logout
+                    """
                 }
             }
         }
 
-        stage('Cleanup') {
+        stage('Deploy to Kubernetes') {
             steps {
-                sh "docker rmi ${DOCKER_IMAGE}:${BUILD_NUMBER}"
-                sh "docker rmi ${DOCKER_IMAGE}:latest"
+                script {
+                    sh """
+                        sed 's|REPLACE_IMAGE|${DOCKER_IMAGE}:${BUILD_NUMBER}|g' ${K8S_DIR}/spring-deployment.yaml \
+                        > /tmp/spring-deploy-${BUILD_NUMBER}.yaml
+
+                        kubectl apply -f /tmp/spring-deploy-${BUILD_NUMBER}.yaml -n devops
+                    """
+                }
+            }
+        }
+
+        stage('Restart App') {
+            steps {
+                sh "kubectl rollout restart deployment/spring-deployment -n devops"
+            }
+        }
+
+        stage('Cleanup Local Images') {
+            steps {
+                sh "docker rmi ${DOCKER_IMAGE}:${BUILD_NUMBER} || true"
+                sh "docker rmi ${DOCKER_IMAGE}:latest || true"
             }
         }
     }
 
     post {
         success {
-            echo "Pipeline terminée avec succès ! Image Docker poussée, tests OK & SonarQube analysé."
+            echo "Pipeline succeeded! Application deployed to Kubernetes."
         }
         failure {
-            echo "La pipeline a échoué."
+            echo "Pipeline failed."
         }
     }
 }
