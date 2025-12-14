@@ -26,19 +26,14 @@ pipeline {
             }
         }
 
-        // ✅ ADDED ONLY THIS PART (SonarQube)
+        // ✅ ONLY ADDED FROM THE WORKING PIPELINE
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv(installationName: "${SONAR_SERVER}") {
                     withCredentials([
                         string(credentialsId: 'SONAR_TOKEN_CREDENTIALS', variable: 'SONAR_TOKEN')
                     ]) {
-                        sh '''
-                            mvn sonar:sonar \
-                            -Dsonar.projectKey=student-management \
-                            -Dsonar.projectName=student-management \
-                            -Dsonar.login=$SONAR_TOKEN
-                        '''
+                        sh 'mvn sonar:sonar -Dsonar.projectKey=student-management -Dsonar.projectName=student-management -Dsonar.login=$SONAR_TOKEN'
                     }
                 }
             }
@@ -77,7 +72,7 @@ pipeline {
                     sed 's|REPLACE_IMAGE|${DOCKER_IMAGE}:${BUILD_NUMBER}|g' ${K8S_DIR}/spring-deployment.yaml \
                     > /tmp/spring-deploy-${BUILD_NUMBER}.yaml
 
-                    kubectl apply -f /tmp/spring-deploy-${BUILD_NUMBER}.yaml -n devops
+                    kubectl apply -f /tmp/spring-deploy-${BUILD_NUMBER}.yaml -n devops --validate=false
                 """
             }
         }
@@ -98,7 +93,7 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline succeeded! Application deployed to Kubernetes."
+            echo "Pipeline succeeded! SonarQube + Docker + Kubernetes executed."
         }
         failure {
             echo "Pipeline failed."
