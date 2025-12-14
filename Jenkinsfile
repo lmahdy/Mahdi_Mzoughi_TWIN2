@@ -4,7 +4,8 @@ pipeline {
     environment {
         DOCKER_HUB_CREDENTIALS = 'docker-hub-credentials'
         DOCKER_IMAGE = 'lmahdyyyy/student-management'   // your DockerHub repo
-        K8S_DIR = 'k8s'
+        SONAR_SERVER = 'SonarQube Local'               // Nom de votre serveur SonarQube
+        K8S_DIR = 'k8s'                                // Dossier contenant les fichiers K8s (si vous l'utilisez)
     }
 
     stages {
@@ -15,13 +16,27 @@ pipeline {
             }
         }
 
-        stage('Maven Build') {
+        stage('Maven Build' ) {
             steps {
+                // Utilisation de 'verify' pour inclure les tests et JaCoCo (nécessaire pour SonarQube)
                 withMaven(maven: 'M3') {
-                    sh 'mvn clean package -DskipTests'
+                    sh 'mvn clean verify' 
                 }
             }
         }
+
+        // ÉTAPE SONARQUBE RÉINTÉGRÉE
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv(installationName: "${SONAR_SERVER}") {
+                    // Récupère le jeton et l'utilise pour l'authentification
+                    withCredentials([string(credentialsId: 'SONAR_TOKEN_CREDENTIALS', variable: 'SONAR_TOKEN')]) {
+                        sh 'mvn sonar:sonar -Dsonar.projectKey=student-management -Dsonar.projectName=student-management -Dsonar.login=$SONAR_TOKEN'
+                    }
+                }
+            }
+        }
+        // FIN DE L'ÉTAPE SONARQUBE
 
         stage('Docker Build') {
             steps {
@@ -52,6 +67,8 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 script {
+                    // Cette étape suppose que vous avez un dossier 'k8s' avec un fichier 'spring-deployment.yaml'
+                    // et que vous avez un namespace 'devops'
                     sh """
                         sed 's|REPLACE_IMAGE|${DOCKER_IMAGE}:${BUILD_NUMBER}|g' ${K8S_DIR}/spring-deployment.yaml \
                         > /tmp/spring-deploy-${BUILD_NUMBER}.yaml
